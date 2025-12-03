@@ -1,4 +1,4 @@
-import { ArrowLeft, Upload, Search, Cloud, FolderPlus, LogOut } from "lucide-react";
+import { ArrowLeft, Upload, Search, Cloud, FolderPlus, LogOut, Link } from "lucide-react";
 import { useRef, useState } from "react";
 
 interface NavbarProps {
@@ -7,11 +7,12 @@ interface NavbarProps {
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSearch: (query: string) => void;
   onHome: () => void;
-  onCreateFolder: () => void; // <--- NEW
-  onLogout: () => void;       // <--- NEW
+  onCreateFolder: () => void;
+  onRemoteUpload: () => void; // <--- NEW PROP
+  onLogout: () => void;
 }
 
-export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome, onCreateFolder, onLogout }: NavbarProps) {
+export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome, onCreateFolder, onRemoteUpload, onLogout }: NavbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchValue, setSearchValue] = useState("");
 
@@ -43,7 +44,16 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
       {/* 2. Actions Section */}
       <div className="flex items-center gap-2 order-2 md:order-3 ml-auto md:ml-0">
         
-        {/* Create Folder Button */}
+        {/* URL Upload Button */}
+        <button 
+          onClick={onRemoteUpload}
+          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
+          title="Remote URL Upload"
+        >
+          <Link size={18} />
+        </button>
+
+        {/* Create Folder */}
         <button 
           onClick={onCreateFolder}
           className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
@@ -76,7 +86,6 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
           onChange={onUpload} 
         />
 
-        {/* Logout */}
         <button 
           onClick={onLogout}
           className="p-2.5 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 rounded-xl transition-colors"
@@ -99,7 +108,6 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
             onChange={(e) => setSearchValue(e.target.value)}
         />
       </form>
-
     </nav>
   );
 }
