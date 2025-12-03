@@ -31,7 +31,11 @@ export default function Home() {
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // UI States (Modals & Player)
+  // Use a ref for path to ensure the polling function always uses the latest path
+  const pathRef = useRef(path);
+  useEffect(() => { pathRef.current = path; }, [path]);
+
+  // UI States
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   
@@ -111,7 +115,7 @@ export default function Home() {
 
     let stage = "download"; // Stages: 'download' -> 'transition' -> 'upload'
     let retryCount = 0;
-    const MAX_RETRIES = 20; // 20 seconds grace period for backend to switch context
+    const MAX_RETRIES = 30; // 30 seconds grace period
 
     const poll = setInterval(async () => {
         try {
@@ -127,9 +131,9 @@ export default function Home() {
                         const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                         setRemoteProgress(pct);
                     } else if (status === "completed") {
-                        setRemoteStatus("Processing File...");
+                        setRemoteStatus("Processing...");
                         setRemoteProgress(100);
-                        stage = "transition"; // Switch to transition
+                        stage = "transition";
                     } else if (status === "error") {
                         clearInterval(poll);
                         setIsRemoteUploading(false);
@@ -143,33 +147,48 @@ export default function Home() {
                 const upRes = await getTelegramUploadProgress(id, password);
                 
                 if (upRes.data.status === "ok" && upRes.data.data) {
-                    // Upload process found!
+                    // We found the upload process!
                     stage = "upload";
-                    retryCount = 0; 
+                    retryCount = 0; // Reset retries since we found it
                     
                     const [status, current, total] = upRes.data.data;
 
                     if (status === "running") {
-                        setRemoteStatus("Uploading to Cloud...");
                         const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                         setRemoteProgress(pct);
+                        
+                        if (pct >= 100) {
+                            setRemoteStatus("Finalizing...");
+                        } else {
+                            setRemoteStatus("Uploading to Cloud...");
+                        }
                     } else if (status === "completed") {
+                        // EXPLICIT SUCCESS
                         clearInterval(poll);
                         setIsRemoteUploading(false);
-                        fetchDirectory(path);
-                        // Optional: Play sound or toast here
+                        fetchDirectory(pathRef.current); // Force refresh
+                        // alert("Upload Complete!"); // Optional: Uncomment if you want an alert
                     }
                 } else {
-                    // Upload not started yet
-                    if (stage === "transition") {
+                    // Upload status not found
+                    if (stage === "upload") {
+                        // We were uploading, but now it's gone.
+                        // This usually means it finished and backend cleared the cache.
+                        // Assume Success!
+                        clearInterval(poll);
+                        setIsRemoteUploading(false);
+                        fetchDirectory(pathRef.current);
+                        console.log("Upload cache cleared, assuming success.");
+                    } 
+                    else if (stage === "transition") {
                         setRemoteStatus("Preparing Upload...");
                         retryCount++;
                         if (retryCount > MAX_RETRIES) {
-                           // If backend takes too long to report upload status, assume it's running in background
+                           // Took too long to start, stop polling but don't error out
                            clearInterval(poll);
                            setIsRemoteUploading(false);
-                           fetchDirectory(path);
-                           alert("Task pushed to background. Check back shortly.");
+                           fetchDirectory(pathRef.current);
+                           alert("Task backgrounded. File should appear shortly.");
                         }
                     }
                 }
@@ -312,7 +331,7 @@ export default function Home() {
                 <div className="flex justify-between text-sm font-medium text-zinc-300">
                     <span className="flex items-center gap-2">
                         {remoteStatus}
-                        {remoteStatus === "Uploading to Cloud..." && <CheckCircle2 size={14} className="text-emerald-500" />}
+                        {remoteStatus === "Finalizing..." && <CheckCircle2 size={14} className="text-emerald-500 animate-pulse" />}
                     </span>
                     <span>{remoteProgress}%</span>
                 </div>
