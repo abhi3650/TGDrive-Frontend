@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { Upload } from "lucide-react"; // <--- ADDED THIS MISSING IMPORT
 import LoginScreen from "@/components/auth/LoginScreen";
 import Navbar from "@/components/dashboard/Navbar";
 import FileGrid from "@/components/dashboard/FileGrid";
@@ -59,8 +60,7 @@ export default function Home() {
   const handleLoginSuccess = (pass: string) => {
     setPassword(pass);
     setIsAuthenticated(true);
-    // Initial fetch handled by effect or manual call here
-    // Since we don't have useEffect dependent on password to prevent loops:
+    // Initial fetch
     getDirectory("/", pass).then(res => {
         if(res.data.status === "ok") {
             setData(res.data.data);
@@ -104,7 +104,7 @@ export default function Home() {
     const formData = new FormData();
     const uniqueId = Math.random().toString(36).substring(7);
     formData.append("file", file);
-    formData.append("path", path); // Warning: Uploading in search results might break path logic
+    formData.append("path", path);
     formData.append("password", password);
     formData.append("id", uniqueId);
     formData.append("total_size", file.size.toString());
