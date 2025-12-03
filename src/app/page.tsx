@@ -26,12 +26,11 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   
-  // Navigation & Data
   const [path, setPath] = useState("/");
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // Ref to access current path inside setInterval/setTimeout
+  // Ref for current path to ensure poll uses latest state
   const pathRef = useRef(path);
   useEffect(() => { pathRef.current = path; }, [path]);
 
@@ -52,17 +51,17 @@ export default function Home() {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [showRemoteUpload, setShowRemoteUpload] = useState(false);
   
-  // File Menu / Operation States
+  // Menus
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
   const [renameItem, setRenameItem] = useState<FileItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<FileItem | null>(null);
 
-  // --- 1. REFRESH PROTECTION ---
+  // --- REFRESH PROTECTION ---
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isRemoteUploading || isLocalUploading) {
         e.preventDefault();
-        e.returnValue = "Upload in progress. Are you sure you want to leave?";
+        e.returnValue = "Upload in progress.";
         return e.returnValue;
       }
     };
@@ -70,7 +69,7 @@ export default function Home() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isRemoteUploading, isLocalUploading]);
 
-  // --- 2. PERSISTENT LOGIN ---
+  // --- PERSISTENT LOGIN ---
   useEffect(() => {
     const savedPass = localStorage.getItem("tgdrive_pass");
     if (savedPass) {
@@ -94,7 +93,6 @@ export default function Home() {
     setData({ contents: {} });
   };
 
-  // --- 3. DATA FETCHING ---
   const fetchDirectory = async (dirPath: string, pass: string = password) => {
     setLoading(true);
     try {
@@ -107,18 +105,18 @@ export default function Home() {
     setLoading(false);
   };
 
-  // --- 4. ROBUST REMOTE UPLOAD POLLING ---
+  // --- AGGRESSIVE POLLING LOGIC ---
   const pollRemoteStatus = async (id: string) => {
     setIsRemoteUploading(true);
     setRemoteProgress(0);
     setRemoteStatus("Initializing...");
 
-    let stage = "download"; // Stages: 'download' -> 'transition' -> 'upload'
+    let stage = "download"; 
     let retryCount = 0;
-    const MAX_RETRIES = 30; 
-    let finalizingCount = 0;
+    let finalizeTicks = 0;
+    const MAX_RETRIES = 20;
 
-    const poll = setInterval(async () => {
+    const intervalId = setInterval(async () => {
         try {
             // STAGE 1: DOWNLOAD FROM URL
             if (stage === "download") {
@@ -128,29 +126,29 @@ export default function Home() {
                     const [status, current, total] = dlRes.data.data;
                     
                     if (status === "running") {
-                        setRemoteStatus("Downloading from URL...");
+                        setRemoteStatus("Downloading...");
                         const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                         setRemoteProgress(pct);
                     } else if (status === "completed") {
                         setRemoteStatus("Processing...");
                         setRemoteProgress(100);
-                        stage = "transition";
+                        stage = "transition"; 
                     } else if (status === "error") {
-                        clearInterval(poll);
+                        clearInterval(intervalId);
                         setIsRemoteUploading(false);
                         alert("Remote Download Failed");
                     }
                 }
             }
 
-            // STAGE 2: TRANSITION & UPLOAD TO TELEGRAM
+            // STAGE 2: UPLOAD TO TELEGRAM
             if (stage === "transition" || stage === "upload") {
                 let upRes;
                 try { upRes = await getTelegramUploadProgress(id, password); } 
                 catch(e) { upRes = { data: { status: "not found" } }; }
                 
                 if (upRes.data.status === "ok" && upRes.data.data) {
-                    // Upload found
+                    // We found the upload process!
                     stage = "upload";
                     retryCount = 0;
                     
@@ -162,38 +160,40 @@ export default function Home() {
                         
                         if (pct >= 99) {
                             setRemoteStatus("Finalizing...");
-                            finalizingCount++;
-                            // Force finish if stuck at 100%
-                            if (finalizingCount > 4) {
-                                clearInterval(poll);
+                            finalizeTicks++;
+                            // AGGRESSIVE FIX: If at 100% for > 2 seconds, Force Success
+                            if (finalizeTicks > 2) {
+                                clearInterval(intervalId);
                                 setIsRemoteUploading(false);
-                                setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
+                                setTimeout(() => fetchDirectory(pathRef.current), 2000);
                             }
                         } else {
                             setRemoteStatus("Uploading to Cloud...");
                         }
                     } else if (status === "completed") {
-                        clearInterval(poll);
+                        // Backend says done
+                        clearInterval(intervalId);
                         setIsRemoteUploading(false);
-                        setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
+                        setTimeout(() => fetchDirectory(pathRef.current), 2000);
                     }
                 } else {
-                    // Status NOT FOUND
+                    // Status is "not found"
                     if (stage === "upload") {
-                        // Means upload finished successfully and cache was cleared
-                        console.log("Process finished (cache cleared)");
-                        clearInterval(poll);
+                        // We were uploading, now it's gone -> IT FINISHED!
+                        console.log("Status gone, assuming success.");
+                        clearInterval(intervalId);
                         setIsRemoteUploading(false);
-                        setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
+                        setTimeout(() => fetchDirectory(pathRef.current), 2000);
                     } 
                     else if (stage === "transition") {
                         setRemoteStatus("Preparing Upload...");
                         retryCount++;
+                        // If waiting too long (>20s) for upload to start, assume it's running invisible
                         if (retryCount > MAX_RETRIES) {
-                           clearInterval(poll);
+                           clearInterval(intervalId);
                            setIsRemoteUploading(false);
-                           setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
-                           alert("Task backgrounded. File will appear shortly.");
+                           setTimeout(() => fetchDirectory(pathRef.current), 2000);
+                           alert("Task sent to background.");
                         }
                     }
                 }
@@ -216,7 +216,7 @@ export default function Home() {
     } catch (e) { alert("Failed to start remote upload"); }
   };
 
-  // --- 5. FILE OPERATIONS ---
+  // --- STANDARD HANDLERS ---
   const handleCreateFolder = async (name: string) => {
     setShowCreateFolder(false);
     try { await createNewFolder(path, name, password); fetchDirectory(path); } 
@@ -241,7 +241,6 @@ export default function Home() {
     } catch (e) { alert("Delete failed"); }
   };
 
-  // --- 6. NAVIGATION & SEARCH ---
   const handleMenuClick = (item: FileItem) => setMenuItem(item);
 
   const handleItemClick = (item: FileItem) => {
@@ -267,7 +266,6 @@ export default function Home() {
     else { parts.splice(-2); fetchDirectory("/" + parts.join("/")); }
   };
 
-  // --- 7. LOCAL UPLOAD ---
   const handleLocalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -307,13 +305,13 @@ export default function Home() {
 
       <main className="pt-36 md:pt-28 px-4 md:px-8 max-w-[1800px] mx-auto">
         
-        {/* Local Upload Card */}
+        {/* Local Upload */}
         {isLocalUploading && (
            <div className="mb-4 glass p-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
               <div className="bg-cyan-500/10 p-2 rounded-lg text-cyan-400"><Upload size={20} className="animate-bounce" /></div>
               <div className="flex-1 space-y-2">
                 <div className="flex justify-between text-sm font-medium text-zinc-300">
-                    <span>Uploading from Device...</span><span>{localUploadProgress}%</span>
+                    <span>Uploading...</span><span>{localUploadProgress}%</span>
                 </div>
                 <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
                     <div className="bg-cyan-500 h-full rounded-full transition-all duration-300 shadow-[0_0_12px_rgba(6,182,212,0.6)]" style={{ width: `${localUploadProgress}%` }} />
@@ -322,7 +320,7 @@ export default function Home() {
            </div>
         )}
 
-        {/* Remote Upload Card */}
+        {/* Remote Upload */}
         {isRemoteUploading && (
            <div className="mb-8 glass p-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 border-l-4 border-l-emerald-500">
               <div className="bg-emerald-500/10 p-2 rounded-lg text-emerald-400">
@@ -351,7 +349,6 @@ export default function Home() {
       </main>
 
       <AnimatePresence>
-        {/* Modals */}
         {selectedFile && (
             <FileActionModal 
                 file={selectedFile}
@@ -377,7 +374,6 @@ export default function Home() {
         {showRemoteUpload && <RemoteUploadModal onClose={() => setShowRemoteUpload(false)} onUpload={handleRemoteUpload} />}
       </AnimatePresence>
 
-      {/* Video Player */}
       {videoUrl && <VideoPlayer src={videoUrl} onClose={() => setVideoUrl(null)} />}
     </div>
   );
