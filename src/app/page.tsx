@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { Upload } from "lucide-react"; // <--- ADDED THIS MISSING IMPORT
+import { Upload } from "lucide-react"; // Fixed import
 import LoginScreen from "@/components/auth/LoginScreen";
 import Navbar from "@/components/dashboard/Navbar";
 import FileGrid from "@/components/dashboard/FileGrid";
@@ -52,7 +52,7 @@ export default function Home() {
         fetchDirectory("/");
         return;
     }
-    // The backend search path convention from your main.py
+    // The backend search path convention
     const searchPath = `/search_${encodeURIComponent(query)}`;
     fetchDirectory(searchPath);
   };
@@ -135,9 +135,11 @@ export default function Home() {
         onBack={handleBack} 
         onUpload={handleUpload} 
         onSearch={handleSearch}
+        onHome={() => fetchDirectory("/")} // <--- Added Home Action
       />
 
-      <main className="pt-28 px-4 md:px-8 max-w-[1800px] mx-auto">
+      {/* Added pt-36 for mobile to account for double-row navbar, pt-28 for desktop */}
+      <main className="pt-36 md:pt-28 px-4 md:px-8 max-w-[1800px] mx-auto">
         
         {isUploading && (
            <div className="mb-8 glass p-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
