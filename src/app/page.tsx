@@ -9,9 +9,10 @@ import VideoPlayer from "@/components/modals/VideoPlayer";
 import FileActionModal from "@/components/modals/FileActionModal";
 import CreateFolderModal from "@/components/modals/CreateFolderModal";
 import RenameModal from "@/components/modals/RenameModal";
-import FileMenuModal from "@/components/modals/FileMenuModal"; // <--- NEW
-import DeleteConfirmModal from "@/components/modals/DeleteConfirmModal"; // <--- NEW
-import { getDirectory, getFileDownloadUrl, createNewFolder, renameFileFolder, deleteFileFolder } from "@/lib/api";
+import FileMenuModal from "@/components/modals/FileMenuModal";
+import DeleteConfirmModal from "@/components/modals/DeleteConfirmModal";
+import RemoteUploadModal from "@/components/modals/RemoteUploadModal"; // <--- IMPORT
+import { getDirectory, getFileDownloadUrl, createNewFolder, renameFileFolder, deleteFileFolder, startRemoteUpload } from "@/lib/api"; // <--- IMPORT API
 import { FileItem, DirectoryData } from "@/lib/types";
 import { isVideoFile } from "@/lib/utils";
 import { AnimatePresence } from "framer-motion";
@@ -21,24 +22,23 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
-  
   const [path, setPath] = useState("/");
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // States
+  // UI States
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   
-  // --- NEW MODAL STATES ---
+  // Modal States
   const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [showRemoteUpload, setShowRemoteUpload] = useState(false); // <--- NEW STATE
   
-  // Menu System
-  const [menuItem, setMenuItem] = useState<FileItem | null>(null); // The file clicked for menu
-  const [renameItem, setRenameItem] = useState<FileItem | null>(null); // File being renamed
-  const [deleteItem, setDeleteItem] = useState<FileItem | null>(null); // File being deleted
+  const [menuItem, setMenuItem] = useState<FileItem | null>(null);
+  const [renameItem, setRenameItem] = useState<FileItem | null>(null);
+  const [deleteItem, setDeleteItem] = useState<FileItem | null>(null);
 
   // --- PERSISTENT LOGIN ---
   useEffect(() => {
@@ -78,6 +78,18 @@ export default function Home() {
   };
 
   // --- HANDLERS ---
+  const handleRemoteUpload = async (url: string) => {
+    setShowRemoteUpload(false);
+    try {
+        const res = await startRemoteUpload(url, path, password);
+        if (res.data.status === "ok") {
+            alert("🚀 Server Download Started!\nThe file will appear here once downloaded to server and uploaded to TG.");
+        } else {
+            alert("Error: " + res.data.status);
+        }
+    } catch (e) { alert("Failed to start remote upload"); }
+  };
+
   const handleCreateFolder = async (name: string) => {
     setShowCreateFolder(false);
     try {
@@ -107,7 +119,7 @@ export default function Home() {
   };
 
   const handleMenuClick = (item: FileItem, e: React.MouseEvent) => {
-    setMenuItem(item); // Opens the nice menu
+    setMenuItem(item);
   };
 
   const handleItemClick = (item: FileItem) => {
@@ -166,6 +178,7 @@ export default function Home() {
         onSearch={handleSearch}
         onHome={() => fetchDirectory("/")}
         onCreateFolder={() => setShowCreateFolder(true)}
+        onRemoteUpload={() => setShowRemoteUpload(true)} // <--- CONNECTED
         onLogout={handleLogout}
       />
 
@@ -187,7 +200,6 @@ export default function Home() {
       </main>
 
       <AnimatePresence>
-        {/* Main Actions (Play Video / Download) */}
         {selectedFile && (
             <FileActionModal 
                 file={selectedFile}
@@ -199,24 +211,14 @@ export default function Home() {
                 } : undefined}
             />
         )}
-
-        {/* 1. The Menu Modal (Opens when you click 3 dots) */}
         {menuItem && (
             <FileMenuModal 
                 item={menuItem}
                 onClose={() => setMenuItem(null)}
-                onRename={() => {
-                    setRenameItem(menuItem);
-                    setMenuItem(null);
-                }}
-                onDelete={() => {
-                    setDeleteItem(menuItem);
-                    setMenuItem(null);
-                }}
+                onRename={() => { setRenameItem(menuItem); setMenuItem(null); }}
+                onDelete={() => { setDeleteItem(menuItem); setMenuItem(null); }}
             />
         )}
-
-        {/* 2. Rename Input Modal */}
         {renameItem && (
             <RenameModal
                 currentName={renameItem.name}
@@ -224,8 +226,6 @@ export default function Home() {
                 onRename={executeRename}
             />
         )}
-
-        {/* 3. Delete Confirmation Modal */}
         {deleteItem && (
             <DeleteConfirmModal
                 itemName={deleteItem.name}
@@ -233,12 +233,16 @@ export default function Home() {
                 onCancel={() => setDeleteItem(null)}
             />
         )}
-
-        {/* Create Folder Modal */}
         {showCreateFolder && (
             <CreateFolderModal 
                 onClose={() => setShowCreateFolder(false)} 
                 onCreate={handleCreateFolder} 
+            />
+        )}
+        {showRemoteUpload && (
+            <RemoteUploadModal 
+                onClose={() => setShowRemoteUpload(false)}
+                onUpload={handleRemoteUpload}
             />
         )}
       </AnimatePresence>
