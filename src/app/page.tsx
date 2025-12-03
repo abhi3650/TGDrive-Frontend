@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { Upload, Link as LinkIcon, CheckCircle2 } from "lucide-react";
+import { Upload, Link as LinkIcon, CheckCircle2, Loader2 } from "lucide-react";
 import LoginScreen from "@/components/auth/LoginScreen";
 import Navbar from "@/components/dashboard/Navbar";
 import FileGrid from "@/components/dashboard/FileGrid";
@@ -25,11 +25,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
+  
+  // Navigation & Data
   const [path, setPath] = useState("/");
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // UI States
+  // UI States (Modals & Player)
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   
@@ -40,16 +42,31 @@ export default function Home() {
   // Remote Upload State
   const [isRemoteUploading, setIsRemoteUploading] = useState(false);
   const [remoteProgress, setRemoteProgress] = useState(0);
-  const [remoteStatus, setRemoteStatus] = useState(""); // "Downloading...", "Uploading..."
+  const [remoteStatus, setRemoteStatus] = useState(""); 
 
-  // Modal States
+  // Modal Visibility
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [showRemoteUpload, setShowRemoteUpload] = useState(false);
   
+  // File Menu / Operation States
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
   const [renameItem, setRenameItem] = useState<FileItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<FileItem | null>(null);
 
+  // --- 1. REFRESH PROTECTION ---
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isRemoteUploading || isLocalUploading) {
+        e.preventDefault();
+        e.returnValue = "Upload in progress. Are you sure you want to leave?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isRemoteUploading, isLocalUploading]);
+
+  // --- 2. PERSISTENT LOGIN ---
   useEffect(() => {
     const savedPass = localStorage.getItem("tgdrive_pass");
     if (savedPass) {
@@ -73,6 +90,7 @@ export default function Home() {
     setData({ contents: {} });
   };
 
+  // --- 3. DATA FETCHING ---
   const fetchDirectory = async (dirPath: string, pass: string = password) => {
     setLoading(true);
     try {
@@ -85,56 +103,81 @@ export default function Home() {
     setLoading(false);
   };
 
-  // --- REMOTE UPLOAD POLLING LOGIC ---
+  // --- 4. ROBUST REMOTE UPLOAD POLLING ---
   const pollRemoteStatus = async (id: string) => {
     setIsRemoteUploading(true);
     setRemoteProgress(0);
     setRemoteStatus("Initializing...");
 
+    let stage = "download"; // Stages: 'download' -> 'transition' -> 'upload'
+    let retryCount = 0;
+    const MAX_RETRIES = 20; // 20 seconds grace period for backend to switch context
+
     const poll = setInterval(async () => {
         try {
-            // Stage 1: Check Download (Server downloading from URL)
-            const dlRes = await getFileDownloadProgress(id, password);
-            
-            if (dlRes.data.status === "ok" && dlRes.data.data) {
-                const [status, current, total] = dlRes.data.data;
+            // STAGE 1: DOWNLOAD FROM URL
+            if (stage === "download") {
+                const dlRes = await getFileDownloadProgress(id, password);
                 
-                if (status === "running") {
-                    setRemoteStatus("Downloading from URL...");
-                    setRemoteProgress(Math.round((current / total) * 100));
-                    return; // Keep polling download
-                } else if (status === "completed") {
-                    // Download done, now check Upload to Telegram
-                    // Just continue to next block
-                } else if (status === "error") {
-                    clearInterval(poll);
-                    setIsRemoteUploading(false);
-                    alert("Remote Download Failed");
-                    return;
+                if (dlRes.data.status === "ok" && dlRes.data.data) {
+                    const [status, current, total] = dlRes.data.data;
+                    
+                    if (status === "running") {
+                        setRemoteStatus("Downloading from URL...");
+                        const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                        setRemoteProgress(pct);
+                    } else if (status === "completed") {
+                        setRemoteStatus("Processing File...");
+                        setRemoteProgress(100);
+                        stage = "transition"; // Switch to transition
+                    } else if (status === "error") {
+                        clearInterval(poll);
+                        setIsRemoteUploading(false);
+                        alert("Remote Download Failed");
+                    }
                 }
             }
 
-            // Stage 2: Check Upload (Server uploading to TG)
-            const upRes = await getTelegramUploadProgress(id, password);
-            
-            if (upRes.data.status === "ok" && upRes.data.data) {
-                const [status, current, total] = upRes.data.data;
+            // STAGE 2: TRANSITION & UPLOAD TO TELEGRAM
+            if (stage === "transition" || stage === "upload") {
+                const upRes = await getTelegramUploadProgress(id, password);
+                
+                if (upRes.data.status === "ok" && upRes.data.data) {
+                    // Upload process found!
+                    stage = "upload";
+                    retryCount = 0; 
+                    
+                    const [status, current, total] = upRes.data.data;
 
-                if (status === "running") {
-                    setRemoteStatus("Uploading to Cloud...");
-                    setRemoteProgress(Math.round((current / total) * 100));
-                } else if (status === "completed") {
-                    clearInterval(poll);
-                    setIsRemoteUploading(false);
-                    fetchDirectory(path); // Refresh UI
-                    alert("Remote Upload Complete!");
+                    if (status === "running") {
+                        setRemoteStatus("Uploading to Cloud...");
+                        const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                        setRemoteProgress(pct);
+                    } else if (status === "completed") {
+                        clearInterval(poll);
+                        setIsRemoteUploading(false);
+                        fetchDirectory(path);
+                        // Optional: Play sound or toast here
+                    }
+                } else {
+                    // Upload not started yet
+                    if (stage === "transition") {
+                        setRemoteStatus("Preparing Upload...");
+                        retryCount++;
+                        if (retryCount > MAX_RETRIES) {
+                           // If backend takes too long to report upload status, assume it's running in background
+                           clearInterval(poll);
+                           setIsRemoteUploading(false);
+                           fetchDirectory(path);
+                           alert("Task pushed to background. Check back shortly.");
+                        }
+                    }
                 }
             }
         } catch (e) {
-            // If backend hasn't started the process yet, just wait
-            console.log("Waiting for process...");
+            console.log("Polling network error, retrying...");
         }
-    }, 1000); // Check every 1 second
+    }, 1000);
   };
 
   const handleRemoteUpload = async (url: string) => {
@@ -142,7 +185,6 @@ export default function Home() {
     try {
         const res = await startRemoteUpload(url, path, password);
         if (res.data.status === "ok") {
-            // Start polling with the returned ID
             pollRemoteStatus(res.data.id);
         } else {
             alert("Error: " + res.data.status);
@@ -150,6 +192,7 @@ export default function Home() {
     } catch (e) { alert("Failed to start remote upload"); }
   };
 
+  // --- 5. FILE OPERATIONS (Create, Rename, Delete) ---
   const handleCreateFolder = async (name: string) => {
     setShowCreateFolder(false);
     try { await createNewFolder(path, name, password); fetchDirectory(path); } 
@@ -174,6 +217,7 @@ export default function Home() {
     } catch (e) { alert("Delete failed"); }
   };
 
+  // --- 6. NAVIGATION & SEARCH ---
   const handleMenuClick = (item: FileItem) => setMenuItem(item);
 
   const handleItemClick = (item: FileItem) => {
@@ -199,6 +243,7 @@ export default function Home() {
     else { parts.splice(-2); fetchDirectory("/" + parts.join("/")); }
   };
 
+  // --- 7. LOCAL UPLOAD ---
   const handleLocalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -238,7 +283,7 @@ export default function Home() {
 
       <main className="pt-36 md:pt-28 px-4 md:px-8 max-w-[1800px] mx-auto">
         
-        {/* Local Upload Progress */}
+        {/* Local Upload Card */}
         {isLocalUploading && (
            <div className="mb-4 glass p-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
               <div className="bg-cyan-500/10 p-2 rounded-lg text-cyan-400"><Upload size={20} className="animate-bounce" /></div>
@@ -253,10 +298,16 @@ export default function Home() {
            </div>
         )}
 
-        {/* Remote Upload Progress */}
+        {/* Remote Upload Card */}
         {isRemoteUploading && (
            <div className="mb-8 glass p-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 border-l-4 border-l-emerald-500">
-              <div className="bg-emerald-500/10 p-2 rounded-lg text-emerald-400"><LinkIcon size={20} className="animate-pulse" /></div>
+              <div className="bg-emerald-500/10 p-2 rounded-lg text-emerald-400">
+                {remoteStatus === "Initializing..." || remoteStatus === "Preparing Upload..." ? (
+                    <Loader2 size={20} className="animate-spin" />
+                ) : (
+                    <LinkIcon size={20} className="animate-pulse" />
+                )}
+              </div>
               <div className="flex-1 space-y-2">
                 <div className="flex justify-between text-sm font-medium text-zinc-300">
                     <span className="flex items-center gap-2">
@@ -276,6 +327,7 @@ export default function Home() {
       </main>
 
       <AnimatePresence>
+        {/* Modals */}
         {selectedFile && (
             <FileActionModal 
                 file={selectedFile}
@@ -301,6 +353,7 @@ export default function Home() {
         {showRemoteUpload && <RemoteUploadModal onClose={() => setShowRemoteUpload(false)} onUpload={handleRemoteUpload} />}
       </AnimatePresence>
 
+      {/* Video Player */}
       {videoUrl && <VideoPlayer src={videoUrl} onClose={() => setVideoUrl(null)} />}
     </div>
   );
