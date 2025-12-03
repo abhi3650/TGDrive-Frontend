@@ -101,11 +101,13 @@ export default function Home() {
         setData(res.data.data);
         setPath(dirPath);
       }
-    } catch (error) { console.error("Fetch failed"); }
+    } catch (error) { 
+      console.error("Fetch failed", error); 
+    }
     setLoading(false);
   };
 
-  // --- AGGRESSIVE POLLING LOGIC ---
+  // --- IMPROVED POLLING WITH RETRY LOGIC ---
   const pollRemoteStatus = async (id: string) => {
     setIsRemoteUploading(true);
     setRemoteProgress(0);
@@ -115,6 +117,7 @@ export default function Home() {
     let retryCount = 0;
     let finalizeTicks = 0;
     const MAX_RETRIES = 20;
+    const currentPath = pathRef.current; // Capture path at start
 
     const intervalId = setInterval(async () => {
         try {
@@ -144,8 +147,11 @@ export default function Home() {
             // STAGE 2: UPLOAD TO TELEGRAM
             if (stage === "transition" || stage === "upload") {
                 let upRes;
-                try { upRes = await getTelegramUploadProgress(id, password); } 
-                catch(e) { upRes = { data: { status: "not found" } }; }
+                try { 
+                    upRes = await getTelegramUploadProgress(id, password); 
+                } catch(e) { 
+                    upRes = { data: { status: "not found" } }; 
+                }
                 
                 if (upRes.data.status === "ok" && upRes.data.data) {
                     // We found the upload process!
@@ -161,11 +167,14 @@ export default function Home() {
                         if (pct >= 99) {
                             setRemoteStatus("Finalizing...");
                             finalizeTicks++;
-                            // AGGRESSIVE FIX: If at 100% for > 2 seconds, Force Success
-                            if (finalizeTicks > 2) {
+                            // If at 100% for > 3 seconds, assume success
+                            if (finalizeTicks > 3) {
                                 clearInterval(intervalId);
+                                setRemoteStatus("Complete! Refreshing...");
+                                // CRITICAL FIX: Wait longer before refresh
+                                await new Promise(resolve => setTimeout(resolve, 3000));
                                 setIsRemoteUploading(false);
-                                setTimeout(() => fetchDirectory(pathRef.current), 2000);
+                                await fetchDirectory(currentPath);
                             }
                         } else {
                             setRemoteStatus("Uploading to Cloud...");
@@ -173,8 +182,11 @@ export default function Home() {
                     } else if (status === "completed") {
                         // Backend says done
                         clearInterval(intervalId);
+                        setRemoteStatus("Complete! Refreshing...");
+                        // CRITICAL FIX: Wait for database to update
+                        await new Promise(resolve => setTimeout(resolve, 3000));
                         setIsRemoteUploading(false);
-                        setTimeout(() => fetchDirectory(pathRef.current), 2000);
+                        await fetchDirectory(currentPath);
                     }
                 } else {
                     // Status is "not found"
@@ -182,24 +194,28 @@ export default function Home() {
                         // We were uploading, now it's gone -> IT FINISHED!
                         console.log("Status gone, assuming success.");
                         clearInterval(intervalId);
+                        setRemoteStatus("Complete! Refreshing...");
+                        // CRITICAL FIX: Wait for database to update
+                        await new Promise(resolve => setTimeout(resolve, 3000));
                         setIsRemoteUploading(false);
-                        setTimeout(() => fetchDirectory(pathRef.current), 2000);
+                        await fetchDirectory(currentPath);
                     } 
                     else if (stage === "transition") {
                         setRemoteStatus("Preparing Upload...");
                         retryCount++;
-                        // If waiting too long (>20s) for upload to start, assume it's running invisible
+                        // If waiting too long (>20s) for upload to start
                         if (retryCount > MAX_RETRIES) {
                            clearInterval(intervalId);
+                           setRemoteStatus("Complete! Refreshing...");
+                           await new Promise(resolve => setTimeout(resolve, 3000));
                            setIsRemoteUploading(false);
-                           setTimeout(() => fetchDirectory(pathRef.current), 2000);
-                           alert("Task sent to background.");
+                           await fetchDirectory(currentPath);
                         }
                     }
                 }
             }
         } catch (e) {
-            console.log("Polling error");
+            console.log("Polling error", e);
         }
     }, 1000);
   };
@@ -213,13 +229,19 @@ export default function Home() {
         } else {
             alert("Error: " + res.data.status);
         }
-    } catch (e) { alert("Failed to start remote upload"); }
+    } catch (e) { 
+        alert("Failed to start remote upload"); 
+    }
   };
 
   // --- STANDARD HANDLERS ---
   const handleCreateFolder = async (name: string) => {
     setShowCreateFolder(false);
-    try { await createNewFolder(path, name, password); fetchDirectory(path); } 
+    try { 
+        await createNewFolder(path, name, password); 
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for DB
+        fetchDirectory(path); 
+    } 
     catch (e) { alert("Failed to create folder"); }
   };
 
@@ -228,6 +250,7 @@ export default function Home() {
     try {
         await renameFileFolder(renameItem.path + renameItem.id, newName, password);
         setRenameItem(null);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for DB
         fetchDirectory(path);
     } catch (e) { alert("Rename failed"); }
   };
@@ -237,6 +260,7 @@ export default function Home() {
     try {
         await deleteFileFolder(deleteItem.path + deleteItem.id, password);
         setDeleteItem(null);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for DB
         fetchDirectory(path);
     } catch (e) { alert("Delete failed"); }
   };
@@ -283,6 +307,7 @@ export default function Home() {
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (p) => setLocalUploadProgress(Math.round((p.loaded * 100) / (p.total || 1))),
       });
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for DB
       fetchDirectory(path);
     } catch (error) { alert("Upload Failed"); }
     setIsLocalUploading(false);
@@ -326,6 +351,8 @@ export default function Home() {
               <div className="bg-emerald-500/10 p-2 rounded-lg text-emerald-400">
                 {remoteStatus === "Initializing..." || remoteStatus === "Preparing Upload..." ? (
                     <Loader2 size={20} className="animate-spin" />
+                ) : remoteStatus === "Complete! Refreshing..." ? (
+                    <CheckCircle2 size={20} className="animate-pulse" />
                 ) : (
                     <LinkIcon size={20} className="animate-pulse" />
                 )}
@@ -334,7 +361,6 @@ export default function Home() {
                 <div className="flex justify-between text-sm font-medium text-zinc-300">
                     <span className="flex items-center gap-2">
                         {remoteStatus}
-                        {remoteStatus === "Finalizing..." && <CheckCircle2 size={14} className="text-emerald-500 animate-pulse" />}
                     </span>
                     <span>{remoteProgress}%</span>
                 </div>
