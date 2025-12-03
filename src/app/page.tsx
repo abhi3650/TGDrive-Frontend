@@ -9,6 +9,8 @@ import VideoPlayer from "@/components/modals/VideoPlayer";
 import FileActionModal from "@/components/modals/FileActionModal";
 import CreateFolderModal from "@/components/modals/CreateFolderModal";
 import RenameModal from "@/components/modals/RenameModal";
+import FileMenuModal from "@/components/modals/FileMenuModal"; // <--- NEW
+import DeleteConfirmModal from "@/components/modals/DeleteConfirmModal"; // <--- NEW
 import { getDirectory, getFileDownloadUrl, createNewFolder, renameFileFolder, deleteFileFolder } from "@/lib/api";
 import { FileItem, DirectoryData } from "@/lib/types";
 import { isVideoFile } from "@/lib/utils";
@@ -24,17 +26,19 @@ export default function Home() {
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // UI States
+  // States
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
-  
-  // Action Modal States
-  const [showCreateFolder, setShowCreateFolder] = useState(false);
-  const [itemToRename, setItemToRename] = useState<FileItem | null>(null);
-  
-  // Upload State
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  
+  // --- NEW MODAL STATES ---
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  
+  // Menu System
+  const [menuItem, setMenuItem] = useState<FileItem | null>(null); // The file clicked for menu
+  const [renameItem, setRenameItem] = useState<FileItem | null>(null); // File being renamed
+  const [deleteItem, setDeleteItem] = useState<FileItem | null>(null); // File being deleted
 
   // --- PERSISTENT LOGIN ---
   useEffect(() => {
@@ -47,7 +51,7 @@ export default function Home() {
   }, []);
 
   const handleLoginSuccess = (pass: string) => {
-    localStorage.setItem("tgdrive_pass", pass); // Save to storage
+    localStorage.setItem("tgdrive_pass", pass);
     setPassword(pass);
     setIsAuthenticated(true);
     fetchDirectory("/", pass);
@@ -61,7 +65,6 @@ export default function Home() {
   };
 
   // --- API CALLS ---
-
   const fetchDirectory = async (dirPath: string, pass: string = password) => {
     setLoading(true);
     try {
@@ -70,12 +73,11 @@ export default function Home() {
         setData(res.data.data);
         setPath(dirPath);
       }
-    } catch (error) {
-      console.error("Failed to fetch directory");
-    }
+    } catch (error) { console.error("Fetch failed"); }
     setLoading(false);
   };
 
+  // --- HANDLERS ---
   const handleCreateFolder = async (name: string) => {
     setShowCreateFolder(false);
     try {
@@ -84,32 +86,28 @@ export default function Home() {
     } catch (e) { alert("Failed to create folder"); }
   };
 
-  const handleRename = async (newName: string) => {
-    if (!itemToRename) return;
-    const fullPath = itemToRename.path + itemToRename.id;
+  const executeRename = async (newName: string) => {
+    if (!renameItem) return;
+    const fullPath = renameItem.path + renameItem.id;
     try {
         await renameFileFolder(fullPath, newName, password);
-        setItemToRename(null);
+        setRenameItem(null);
         fetchDirectory(path);
     } catch (e) { alert("Rename failed"); }
   };
 
-  const handleDelete = async (item: FileItem) => {
-    if (!confirm(`Are you sure you want to delete "${item.name}"?`)) return;
-    const fullPath = item.path + item.id;
+  const executeDelete = async () => {
+    if (!deleteItem) return;
+    const fullPath = deleteItem.path + deleteItem.id;
     try {
         await deleteFileFolder(fullPath, password);
+        setDeleteItem(null);
         fetchDirectory(path);
-        // If it was the selected file in modal, close it
-        if(selectedFile?.id === item.id) setSelectedFile(null);
     } catch (e) { alert("Delete failed"); }
   };
 
-  // --- NAVIGATION & ACTIONS ---
-
-  const handleSearch = (query: string) => {
-    if (!query) { fetchDirectory("/"); return; }
-    fetchDirectory(`/search_${encodeURIComponent(query)}`);
+  const handleMenuClick = (item: FileItem, e: React.MouseEvent) => {
+    setMenuItem(item); // Opens the nice menu
   };
 
   const handleItemClick = (item: FileItem) => {
@@ -123,39 +121,16 @@ export default function Home() {
     }
   };
 
-  const handleMenuClick = (item: FileItem, e: React.MouseEvent) => {
-    // For now, let's use the browser's native confirm/prompt for simplicity 
-    // or trigger the specific modals.
-    // Ideally we would show a dropdown, but for simplicity we can trigger actions immediately 
-    // or use the FileActionModal for files.
-    
-    // Better UX: Reuse Logic
-    // If it's a file, open the ActionModal (which we will upgrade to have delete/rename)
-    // If it's a folder, trigger Rename/Delete immediately via prompt?
-    
-    // Let's keep it simple: Menu Button -> Shows Actions (We can repurpose FileActionModal or just use prompt)
-    // Actually, let's just make the "Three Dots" open the FileActionModal for files,
-    // and for folders, we ask "What do you want to do?" (Rename/Delete)
-    
-    // Simplified Logic: 
-    const action = prompt(`Actions for ${item.name}:\nType 'r' to Rename\nType 'd' to Delete`);
-    if (action?.toLowerCase() === 'r') setItemToRename(item);
-    if (action?.toLowerCase() === 'd') handleDelete(item);
+  const handleSearch = (query: string) => {
+    if (!query) { fetchDirectory("/"); return; }
+    fetchDirectory(`/search_${encodeURIComponent(query)}`);
   };
 
   const handleBack = () => {
-    if (path === "/" || path.includes("/search_")) {
-        fetchDirectory("/");
-        return;
-    }
+    if (path === "/" || path.includes("/search_")) { fetchDirectory("/"); return; }
     const parts = path.split("/").filter(Boolean);
-    if (parts.length <= 2) {
-        fetchDirectory("/");
-    } else {
-        parts.splice(-2);
-        const newPath = "/" + parts.join("/");
-        fetchDirectory(newPath);
-    }
+    if (parts.length <= 2) fetchDirectory("/");
+    else { parts.splice(-2); fetchDirectory("/" + parts.join("/")); }
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,7 +159,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen pb-10">
-      
       <Navbar 
         currentPath={path} 
         onBack={handleBack} 
@@ -201,7 +175,7 @@ export default function Home() {
               <div className="bg-cyan-500/10 p-2 rounded-lg text-cyan-400"><Upload size={20} className="animate-bounce" /></div>
               <div className="flex-1 space-y-2">
                 <div className="flex justify-between text-sm font-medium text-zinc-300">
-                    <span>Uploading File...</span><span>{uploadProgress}%</span>
+                    <span>Uploading...</span><span>{uploadProgress}%</span>
                 </div>
                 <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
                     <div className="bg-cyan-500 h-full rounded-full transition-all duration-300 shadow-[0_0_12px_rgba(6,182,212,0.6)]" style={{ width: `${uploadProgress}%` }} />
@@ -209,11 +183,11 @@ export default function Home() {
               </div>
            </div>
         )}
-
         <FileGrid data={data} onItemClick={handleItemClick} onMenu={handleMenuClick} loading={loading} />
       </main>
 
       <AnimatePresence>
+        {/* Main Actions (Play Video / Download) */}
         {selectedFile && (
             <FileActionModal 
                 file={selectedFile}
@@ -225,17 +199,46 @@ export default function Home() {
                 } : undefined}
             />
         )}
+
+        {/* 1. The Menu Modal (Opens when you click 3 dots) */}
+        {menuItem && (
+            <FileMenuModal 
+                item={menuItem}
+                onClose={() => setMenuItem(null)}
+                onRename={() => {
+                    setRenameItem(menuItem);
+                    setMenuItem(null);
+                }}
+                onDelete={() => {
+                    setDeleteItem(menuItem);
+                    setMenuItem(null);
+                }}
+            />
+        )}
+
+        {/* 2. Rename Input Modal */}
+        {renameItem && (
+            <RenameModal
+                currentName={renameItem.name}
+                onClose={() => setRenameItem(null)}
+                onRename={executeRename}
+            />
+        )}
+
+        {/* 3. Delete Confirmation Modal */}
+        {deleteItem && (
+            <DeleteConfirmModal
+                itemName={deleteItem.name}
+                onConfirm={executeDelete}
+                onCancel={() => setDeleteItem(null)}
+            />
+        )}
+
+        {/* Create Folder Modal */}
         {showCreateFolder && (
             <CreateFolderModal 
                 onClose={() => setShowCreateFolder(false)} 
                 onCreate={handleCreateFolder} 
-            />
-        )}
-        {itemToRename && (
-            <RenameModal
-                currentName={itemToRename.name}
-                onClose={() => setItemToRename(null)}
-                onRename={handleRename}
             />
         )}
       </AnimatePresence>
