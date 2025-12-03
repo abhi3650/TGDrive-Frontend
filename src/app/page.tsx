@@ -30,7 +30,6 @@ export default function Home() {
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // Ref for current path to ensure poll uses latest state
   const pathRef = useRef(path);
   useEffect(() => { pathRef.current = path; }, [path]);
 
@@ -51,7 +50,6 @@ export default function Home() {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [showRemoteUpload, setShowRemoteUpload] = useState(false);
   
-  // Menus
   const [menuItem, setMenuItem] = useState<FileItem | null>(null);
   const [renameItem, setRenameItem] = useState<FileItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<FileItem | null>(null);
@@ -107,7 +105,7 @@ export default function Home() {
     setLoading(false);
   };
 
-  // --- DEBUG POLLING WITH AGGRESSIVE REFRESH ---
+  // --- REMOTE UPLOAD POLLING ---
   const pollRemoteStatus = async (id: string) => {
     setIsRemoteUploading(true);
     setRemoteProgress(0);
@@ -116,14 +114,12 @@ export default function Home() {
     let stage = "download"; 
     let uploadCompleted = false;
     const currentPath = pathRef.current;
-    console.log("🚀 Starting remote upload poll for ID:", id, "Path:", currentPath);
 
     const intervalId = setInterval(async () => {
         try {
             // STAGE 1: CHECK DOWNLOAD PROGRESS
             if (stage === "download") {
                 const dlRes = await getFileDownloadProgress(id, password);
-                console.log("📥 Download Status:", dlRes.data);
                 
                 if (dlRes.data.status === "ok" && dlRes.data.data) {
                     const [status, current, total] = dlRes.data.data;
@@ -133,13 +129,10 @@ export default function Home() {
                         const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                         setRemoteProgress(pct);
                     } else if (status === "completed") {
-                        console.log("✅ Download completed, moving to upload stage");
-                        setRemoteStatus("Download Complete. Starting Upload...");
+                        setRemoteStatus("Starting Upload...");
                         setRemoteProgress(100);
                         stage = "upload";
-                        await new Promise(resolve => setTimeout(resolve, 2000));
                     } else if (status === "error") {
-                        console.error("❌ Download failed");
                         clearInterval(intervalId);
                         setIsRemoteUploading(false);
                         alert("Remote Download Failed");
@@ -151,7 +144,6 @@ export default function Home() {
             if (stage === "upload" && !uploadCompleted) {
                 try {
                     const upRes = await getTelegramUploadProgress(id, password);
-                    console.log("📤 Upload Status:", upRes.data);
                     
                     if (upRes.data.status === "ok" && upRes.data.data) {
                         const [status, current, total] = upRes.data.data;
@@ -159,53 +151,42 @@ export default function Home() {
                         if (status === "running") {
                             const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                             setRemoteProgress(pct);
-                            setRemoteStatus(`Uploading to Telegram... ${pct}%`);
+                            // --- FIX: Removed the ${pct}% from string here ---
+                            setRemoteStatus("Uploading to Telegram..."); 
                         } else if (status === "completed") {
-                            console.log("✅ Telegram upload completed!");
                             uploadCompleted = true;
                             clearInterval(intervalId);
-                            setRemoteStatus("Upload Complete! Refreshing...");
+                            setRemoteStatus("Complete! Refreshing...");
                             setRemoteProgress(100);
                             
-                            // AGGRESSIVE MULTI-REFRESH STRATEGY
+                            // Aggressive Refresh
                             await new Promise(resolve => setTimeout(resolve, 2000));
-                            console.log("🔄 First refresh...");
                             await fetchDirectory(currentPath);
-                            
-                            await new Promise(resolve => setTimeout(resolve, 3000));
-                            console.log("🔄 Second refresh...");
-                            await fetchDirectory(currentPath);
-                            
                             setIsRemoteUploading(false);
                         }
                     } else if (upRes.data.status === "not found") {
-                        console.log("⏳ Upload process not found yet, waiting...");
                         setRemoteStatus("Preparing upload...");
                     }
                 } catch (err) {
-                    console.log("⚠️ Error checking upload progress:", err);
+                    console.log("Waiting for upload process...");
                 }
             }
         } catch (e) {
-            console.error("❌ Polling error:", e);
+            console.error("Polling error:", e);
         }
     }, 1500);
   };
 
   const handleRemoteUpload = async (url: string) => {
     setShowRemoteUpload(false);
-    console.log("🎯 Starting remote upload for URL:", url);
     try {
         const res = await startRemoteUpload(url, path, password);
-        console.log("📡 Backend response:", res.data);
         if (res.data.status === "ok") {
-            console.log("✅ Upload task created with ID:", res.data.id);
             pollRemoteStatus(res.data.id);
         } else {
             alert("Error: " + res.data.status);
         }
     } catch (e) { 
-        console.error("❌ Failed to start remote upload:", e);
         alert("Failed to start remote upload"); 
     }
   };
@@ -215,7 +196,7 @@ export default function Home() {
     setShowCreateFolder(false);
     try { 
         await createNewFolder(path, name, password); 
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for DB
+        await new Promise(resolve => setTimeout(resolve, 1000));
         fetchDirectory(path); 
     } 
     catch (e) { alert("Failed to create folder"); }
@@ -226,7 +207,7 @@ export default function Home() {
     try {
         await renameFileFolder(renameItem.path + renameItem.id, newName, password);
         setRenameItem(null);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for DB
+        await new Promise(resolve => setTimeout(resolve, 1000));
         fetchDirectory(path);
     } catch (e) { alert("Rename failed"); }
   };
@@ -236,7 +217,7 @@ export default function Home() {
     try {
         await deleteFileFolder(deleteItem.path + deleteItem.id, password);
         setDeleteItem(null);
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for DB
+        await new Promise(resolve => setTimeout(resolve, 1000));
         fetchDirectory(path);
     } catch (e) { alert("Delete failed"); }
   };
@@ -283,7 +264,7 @@ export default function Home() {
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (p) => setLocalUploadProgress(Math.round((p.loaded * 100) / (p.total || 1))),
       });
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for DB
+      await new Promise(resolve => setTimeout(resolve, 2000));
       fetchDirectory(path);
     } catch (error) { alert("Upload Failed"); }
     setIsLocalUploading(false);
