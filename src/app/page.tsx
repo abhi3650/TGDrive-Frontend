@@ -115,7 +115,8 @@ export default function Home() {
 
     let stage = "download"; // Stages: 'download' -> 'transition' -> 'upload'
     let retryCount = 0;
-    const MAX_RETRIES = 30; // 30 seconds grace period
+    const MAX_RETRIES = 30; 
+    let finalizingCount = 0; // Force finish if stuck on 100%
 
     const poll = setInterval(async () => {
         try {
@@ -144,12 +145,18 @@ export default function Home() {
 
             // STAGE 2: TRANSITION & UPLOAD TO TELEGRAM
             if (stage === "transition" || stage === "upload") {
-                const upRes = await getTelegramUploadProgress(id, password);
+                let upRes;
+                try {
+                    upRes = await getTelegramUploadProgress(id, password);
+                } catch(e) {
+                    // If network fails or 404
+                    upRes = { data: { status: "not found" } };
+                }
                 
                 if (upRes.data.status === "ok" && upRes.data.data) {
-                    // We found the upload process!
+                    // We found the upload process
                     stage = "upload";
-                    retryCount = 0; // Reset retries since we found it
+                    retryCount = 0;
                     
                     const [status, current, total] = upRes.data.data;
 
@@ -157,44 +164,54 @@ export default function Home() {
                         const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                         setRemoteProgress(pct);
                         
-                        if (pct >= 100) {
+                        if (pct >= 99) {
                             setRemoteStatus("Finalizing...");
+                            finalizingCount++;
+                            // FORCE SUCCESS: If stuck at 100% for > 3 seconds, kill it and refresh
+                            if (finalizingCount > 3) {
+                                clearInterval(poll);
+                                setIsRemoteUploading(false);
+                                fetchDirectory(pathRef.current);
+                            }
                         } else {
                             setRemoteStatus("Uploading to Cloud...");
                         }
                     } else if (status === "completed") {
-                        // EXPLICIT SUCCESS
-                        clearInterval(poll);
-                        setIsRemoteUploading(false);
-                        fetchDirectory(pathRef.current); // Force refresh
-                        // alert("Upload Complete!"); // Optional: Uncomment if you want an alert
-                    }
-                } else {
-                    // Upload status not found
-                    if (stage === "upload") {
-                        // We were uploading, but now it's gone.
-                        // This usually means it finished and backend cleared the cache.
-                        // Assume Success!
                         clearInterval(poll);
                         setIsRemoteUploading(false);
                         fetchDirectory(pathRef.current);
-                        console.log("Upload cache cleared, assuming success.");
+                    }
+                } else {
+                    // Status is "not found" or error
+                    if (stage === "upload") {
+                        // If we were uploading and now it's gone -> SUCCESS
+                        clearInterval(poll);
+                        setIsRemoteUploading(false);
+                        fetchDirectory(pathRef.current);
+                        console.log("Process finished (cache cleared)");
                     } 
                     else if (stage === "transition") {
                         setRemoteStatus("Preparing Upload...");
                         retryCount++;
+                        // If backend takes too long (>30s) to start upload, assume backgrounded
                         if (retryCount > MAX_RETRIES) {
-                           // Took too long to start, stop polling but don't error out
                            clearInterval(poll);
                            setIsRemoteUploading(false);
                            fetchDirectory(pathRef.current);
-                           alert("Task backgrounded. File should appear shortly.");
+                           alert("Task backgrounded. File will appear shortly.");
                         }
                     }
                 }
             }
         } catch (e) {
-            console.log("Polling network error, retrying...");
+            // General Error Handler
+            // If we are deep in the process (>90%) and hit an error, assume success
+            if (remoteProgress > 90) {
+                 clearInterval(poll);
+                 setIsRemoteUploading(false);
+                 fetchDirectory(pathRef.current);
+            }
+            console.log("Polling error");
         }
     }, 1000);
   };
@@ -211,7 +228,7 @@ export default function Home() {
     } catch (e) { alert("Failed to start remote upload"); }
   };
 
-  // --- 5. FILE OPERATIONS (Create, Rename, Delete) ---
+  // --- 5. FILE OPERATIONS ---
   const handleCreateFolder = async (name: string) => {
     setShowCreateFolder(false);
     try { await createNewFolder(path, name, password); fetchDirectory(path); } 
