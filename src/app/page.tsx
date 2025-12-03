@@ -1,13 +1,15 @@
 "use client";
 import { useState, useEffect } from "react";
-import axios from "axios"; // Using direct axios for upload progress
+import axios from "axios";
 import LoginScreen from "@/components/auth/LoginScreen";
 import Navbar from "@/components/dashboard/Navbar";
 import FileGrid from "@/components/dashboard/FileGrid";
 import VideoPlayer from "@/components/modals/VideoPlayer";
+import FileActionModal from "@/components/modals/FileActionModal";
 import { getDirectory, getFileDownloadUrl } from "@/lib/api";
 import { FileItem, DirectoryData } from "@/lib/types";
 import { isVideoFile } from "@/lib/utils";
+import { AnimatePresence } from "framer-motion";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -15,22 +17,20 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   
-  // Drive State
   const [path, setPath] = useState("/");
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // UI State
+  // Modal States
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   
-  // Upload State
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Initial Data Fetch
   useEffect(() => {
-    if (isAuthenticated) fetchDirectory(path);
-  }, [isAuthenticated]); // removed path from dependency to prevent loop, called manually
+    // Only load from local storage or check session if needed, for now manual login
+  }, []);
 
   const fetchDirectory = async (dirPath: string) => {
     setLoading(true);
@@ -46,35 +46,50 @@ export default function Home() {
     setLoading(false);
   };
 
+  const handleSearch = (query: string) => {
+    if (!query) {
+        fetchDirectory("/");
+        return;
+    }
+    // The backend search path convention from your main.py
+    const searchPath = `/search_${encodeURIComponent(query)}`;
+    fetchDirectory(searchPath);
+  };
+
   const handleLoginSuccess = (pass: string) => {
     setPassword(pass);
     setIsAuthenticated(true);
+    // Initial fetch handled by effect or manual call here
+    // Since we don't have useEffect dependent on password to prevent loops:
+    getDirectory("/", pass).then(res => {
+        if(res.data.status === "ok") {
+            setData(res.data.data);
+            setPath("/");
+        }
+    });
   };
 
   const handleItemClick = (item: FileItem) => {
     if (item.type === "folder") {
-        // Construct new path: /ParentName/ParentID/FolderName/FolderID
-        // Note: The logic here depends on your backend's specific ID requirement. 
-        // Assuming simple concatenation for navigation:
-        const newPath = path === "/" ? `/${item.name}/${item.id}` : `${path}/${item.name}/${item.id}`;
+        const newPath = path === "/" || path.includes("/search_") 
+            ? `/${item.name}/${item.id}` 
+            : `${path}/${item.name}/${item.id}`;
         fetchDirectory(newPath);
     } else {
-        const url = getFileDownloadUrl(item.path, item.id);
-        if (isVideoFile(item.name)) {
-            setVideoUrl(url);
-        } else {
-            window.open(url, "_blank");
-        }
+        // Open the Action Modal for files
+        setSelectedFile(item);
     }
   };
 
   const handleBack = () => {
-    if (path === "/") return;
+    if (path === "/" || path.includes("/search_")) {
+        fetchDirectory("/");
+        return;
+    }
     const parts = path.split("/").filter(Boolean);
     if (parts.length <= 2) {
         fetchDirectory("/");
     } else {
-        // Remove the last folder name and ID
         parts.splice(-2);
         const newPath = "/" + parts.join("/");
         fetchDirectory(newPath);
@@ -89,13 +104,12 @@ export default function Home() {
     const formData = new FormData();
     const uniqueId = Math.random().toString(36).substring(7);
     formData.append("file", file);
-    formData.append("path", path);
+    formData.append("path", path); // Warning: Uploading in search results might break path logic
     formData.append("password", password);
     formData.append("id", uniqueId);
     formData.append("total_size", file.size.toString());
 
     try {
-      // Using direct axios here to access upload progress event easily
       await axios.post(`${API_URL}/api/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (progressEvent) => {
@@ -103,7 +117,7 @@ export default function Home() {
           setUploadProgress(percent);
         },
       });
-      fetchDirectory(path); // Refresh folder
+      fetchDirectory(path);
     } catch (error) {
       alert("Upload Failed");
     }
@@ -114,31 +128,53 @@ export default function Home() {
   if (!isAuthenticated) return <LoginScreen onSuccess={handleLoginSuccess} />;
 
   return (
-    <div className="min-h-screen bg-slate-950 font-sans selection:bg-cyan-500/30 text-slate-200">
+    <div className="min-h-screen pb-10">
       
-      <Navbar currentPath={path} onBack={handleBack} onUpload={handleUpload} />
+      <Navbar 
+        currentPath={path} 
+        onBack={handleBack} 
+        onUpload={handleUpload} 
+        onSearch={handleSearch}
+      />
 
-      <main className="pt-24 px-6 pb-10 max-w-[1600px] mx-auto">
+      <main className="pt-28 px-4 md:px-8 max-w-[1800px] mx-auto">
         
-        {/* Upload Progress Bar */}
         {isUploading && (
-           <div className="mb-8 bg-slate-900 border border-slate-800 p-4 rounded-xl shadow-lg animate-in fade-in slide-in-from-top-4">
-              <div className="flex justify-between mb-2 text-sm text-cyan-400 font-medium">
-                  <span className="flex items-center gap-2">🚀 Uploading...</span>
-                  <span>{uploadProgress}%</span>
+           <div className="mb-8 glass p-4 rounded-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
+              <div className="bg-cyan-500/10 p-2 rounded-lg text-cyan-400">
+                <Upload size={20} className="animate-bounce" />
               </div>
-              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                  <div 
-                      className="bg-cyan-500 h-full rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(6,182,212,0.5)]" 
-                      style={{ width: `${uploadProgress}%` }}
-                  />
+              <div className="flex-1 space-y-2">
+                <div className="flex justify-between text-sm font-medium text-zinc-300">
+                    <span>Uploading File...</span>
+                    <span>{uploadProgress}%</span>
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                        className="bg-cyan-500 h-full rounded-full transition-all duration-300 shadow-[0_0_12px_rgba(6,182,212,0.6)]" 
+                        style={{ width: `${uploadProgress}%` }}
+                    />
+                </div>
               </div>
            </div>
         )}
 
         <FileGrid data={data} onItemClick={handleItemClick} loading={loading} />
-      
       </main>
+
+      <AnimatePresence>
+        {selectedFile && (
+            <FileActionModal 
+                file={selectedFile}
+                downloadUrl={getFileDownloadUrl(selectedFile.path, selectedFile.id)}
+                onClose={() => setSelectedFile(null)}
+                onStream={isVideoFile(selectedFile.name) ? () => {
+                    setVideoUrl(getFileDownloadUrl(selectedFile.path, selectedFile.id));
+                    setSelectedFile(null);
+                } : undefined}
+            />
+        )}
+      </AnimatePresence>
 
       {videoUrl && <VideoPlayer src={videoUrl} onClose={() => setVideoUrl(null)} />}
     </div>
