@@ -1,4 +1,4 @@
-import { ArrowLeft, Upload, Search, Cloud } from "lucide-react";
+import { ArrowLeft, Upload, Search, Cloud, FolderPlus, LogOut } from "lucide-react";
 import { useRef, useState } from "react";
 
 interface NavbarProps {
@@ -6,10 +6,12 @@ interface NavbarProps {
   onBack: () => void;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSearch: (query: string) => void;
-  onHome: () => void; // <--- NEW PROP
+  onHome: () => void;
+  onCreateFolder: () => void; // <--- NEW
+  onLogout: () => void;       // <--- NEW
 }
 
-export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome }: NavbarProps) {
+export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome, onCreateFolder, onLogout }: NavbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchValue, setSearchValue] = useState("");
 
@@ -21,11 +23,8 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
   return (
     <nav className="fixed top-0 w-full glass z-50 px-4 md:px-8 py-3 md:py-4 flex flex-wrap md:flex-nowrap justify-between items-center gap-3 md:gap-4 transition-all">
       
-      {/* 1. Logo Section (Clickable) */}
-      <div 
-        className="flex items-center gap-3 order-1 cursor-pointer group" 
-        onClick={onHome} // <--- CLICK HANDLER ADDED
-      >
+      {/* 1. Logo Section */}
+      <div className="flex items-center gap-3 order-1 cursor-pointer group" onClick={onHome}>
         <div className="bg-gradient-to-tr from-cyan-500 to-blue-600 w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-900/20 shrink-0 group-hover:scale-105 transition-transform">
           <Cloud size={20} className="text-white" />
         </div>
@@ -43,10 +42,20 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
 
       {/* 2. Actions Section */}
       <div className="flex items-center gap-2 order-2 md:order-3 ml-auto md:ml-0">
+        
+        {/* Create Folder Button */}
+        <button 
+          onClick={onCreateFolder}
+          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
+          title="New Folder"
+        >
+          <FolderPlus size={18} />
+        </button>
+
         {currentPath !== "/" && !currentPath.includes("/search_") && (
           <button 
             onClick={onBack} 
-            className="p-2 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
+            className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
             title="Go Back"
           >
             <ArrowLeft size={18} />
@@ -55,7 +64,7 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
 
         <button 
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 bg-white hover:bg-zinc-200 text-black px-4 py-2 rounded-xl font-medium transition-all shadow-lg shadow-white/5 active:scale-95"
+          className="flex items-center gap-2 bg-white hover:bg-zinc-200 text-black px-4 py-2.5 rounded-xl font-medium transition-all shadow-lg shadow-white/5 active:scale-95"
         >
           <Upload size={18} />
           <span className="hidden sm:inline">Upload</span>
@@ -66,6 +75,15 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
           className="hidden" 
           onChange={onUpload} 
         />
+
+        {/* Logout */}
+        <button 
+          onClick={onLogout}
+          className="p-2.5 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 rounded-xl transition-colors"
+          title="Logout"
+        >
+          <LogOut size={18} />
+        </button>
       </div>
 
       {/* 3. Search Bar */}
