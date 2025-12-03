@@ -2,11 +2,14 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: [
-    // 👇 THESE LINES ARE CRITICAL
-    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/lib/**/*.{js,ts,jsx,tsx,mdx}" 
+    // Covers if you use 'src' folder
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
+    
+    // Covers if you DON'T use 'src' folder (Root)
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./lib/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
