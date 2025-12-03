@@ -12,7 +12,9 @@ export default function RemoteUploadModal({ onClose, onUpload }: RemoteUploadMod
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (url.trim()) onUpload(url);
+    if (url.trim()) {
+      onUpload(url.trim()); // Trim whitespace
+    }
   };
 
   return (
@@ -38,7 +40,7 @@ export default function RemoteUploadModal({ onClose, onUpload }: RemoteUploadMod
                         autoFocus
                         type="url"
                         placeholder="https://example.com/file.mp4"
-                        className="w-full mt-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors"
+                        className="w-full mt-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-500 transition-colors placeholder:text-zinc-600"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                         required
