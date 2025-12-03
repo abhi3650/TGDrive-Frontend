@@ -6,16 +6,17 @@ const api = axios.create({
   baseURL: API_URL,
 });
 
-// ... (Keep existing authentication and folder logic) ...
-
+// --- AUTHENTICATION ---
 export const checkPassword = async (password: string) => {
   return api.post("/api/checkPassword", { pass: password });
 };
 
+// --- DIRECTORY & NAVIGATION ---
 export const getDirectory = async (path: string, password: string) => {
   return api.post("/api/getDirectory", { path, password });
 };
 
+// --- FILE MANAGEMENT ---
 export const createNewFolder = async (path: string, name: string, password: string) => {
   return api.post("/api/createNewFolder", { path, name, password });
 };
@@ -28,35 +29,42 @@ export const deleteFileFolder = async (path: string, password: string) => {
   return api.post("/api/deleteFileFolder", { path, password });
 };
 
-// --- REMOTE UPLOAD ---
-
+// --- REMOTE URL UPLOAD (FIXED) ---
 export const startRemoteUpload = async (url: string, path: string, password: string) => {
-  let filename = "downloaded_file";
+  let filename = ""; // Default to empty string (Backend will Auto-Detect)
+
   try {
-      const urlObj = new URL(url);
+      const decodedUrl = decodeURIComponent(url);
+      const urlObj = new URL(decodedUrl);
       const extracted = urlObj.pathname.split('/').pop();
-      if (extracted) filename = extracted;
-  } catch (e) {}
+      
+      // Only use the name from URL if it has an extension (e.g. video.mp4)
+      if (extracted && extracted.includes('.')) {
+          filename = extracted;
+      }
+  } catch (e) {
+      // If URL parsing fails, stick to empty string
+  }
 
   return api.post("/api/startFileDownloadFromUrl", { 
     url, 
     path, 
-    filename, 
+    filename, // Sends "" if unknown
     password,
     singleThreaded: false 
   });
 };
 
-// New: Check "Download from URL" progress (Stage 1)
+// --- PROGRESS TRACKING ---
 export const getFileDownloadProgress = async (id: string, password: string) => {
   return api.post("/api/getFileDownloadProgress", { id, password });
 };
 
-// New: Check "Upload to Telegram" progress (Stage 2)
 export const getTelegramUploadProgress = async (id: string, password: string) => {
   return api.post("/api/getUploadProgress", { id, password });
 };
 
+// --- HELPER UTILITIES ---
 export const getFileDownloadUrl = (path: string, id: string) => {
   return `${API_URL}/file?path=${path}${id}`;
 };
