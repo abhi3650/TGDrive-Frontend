@@ -31,7 +31,7 @@ export default function Home() {
   const [data, setData] = useState<DirectoryData>({ contents: {} });
   const [loading, setLoading] = useState(false);
   
-  // Use a ref for path to ensure the polling function always uses the latest path
+  // Ref to access current path inside setInterval/setTimeout
   const pathRef = useRef(path);
   useEffect(() => { pathRef.current = path; }, [path]);
 
@@ -116,7 +116,7 @@ export default function Home() {
     let stage = "download"; // Stages: 'download' -> 'transition' -> 'upload'
     let retryCount = 0;
     const MAX_RETRIES = 30; 
-    let finalizingCount = 0; // Force finish if stuck on 100%
+    let finalizingCount = 0;
 
     const poll = setInterval(async () => {
         try {
@@ -146,15 +146,11 @@ export default function Home() {
             // STAGE 2: TRANSITION & UPLOAD TO TELEGRAM
             if (stage === "transition" || stage === "upload") {
                 let upRes;
-                try {
-                    upRes = await getTelegramUploadProgress(id, password);
-                } catch(e) {
-                    // If network fails or 404
-                    upRes = { data: { status: "not found" } };
-                }
+                try { upRes = await getTelegramUploadProgress(id, password); } 
+                catch(e) { upRes = { data: { status: "not found" } }; }
                 
                 if (upRes.data.status === "ok" && upRes.data.data) {
-                    // We found the upload process
+                    // Upload found
                     stage = "upload";
                     retryCount = 0;
                     
@@ -167,11 +163,11 @@ export default function Home() {
                         if (pct >= 99) {
                             setRemoteStatus("Finalizing...");
                             finalizingCount++;
-                            // FORCE SUCCESS: If stuck at 100% for > 3 seconds, kill it and refresh
-                            if (finalizingCount > 3) {
+                            // Force finish if stuck at 100%
+                            if (finalizingCount > 4) {
                                 clearInterval(poll);
                                 setIsRemoteUploading(false);
-                                fetchDirectory(pathRef.current);
+                                setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
                             }
                         } else {
                             setRemoteStatus("Uploading to Cloud...");
@@ -179,38 +175,30 @@ export default function Home() {
                     } else if (status === "completed") {
                         clearInterval(poll);
                         setIsRemoteUploading(false);
-                        fetchDirectory(pathRef.current);
+                        setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
                     }
                 } else {
-                    // Status is "not found" or error
+                    // Status NOT FOUND
                     if (stage === "upload") {
-                        // If we were uploading and now it's gone -> SUCCESS
+                        // Means upload finished successfully and cache was cleared
+                        console.log("Process finished (cache cleared)");
                         clearInterval(poll);
                         setIsRemoteUploading(false);
-                        fetchDirectory(pathRef.current);
-                        console.log("Process finished (cache cleared)");
+                        setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
                     } 
                     else if (stage === "transition") {
                         setRemoteStatus("Preparing Upload...");
                         retryCount++;
-                        // If backend takes too long (>30s) to start upload, assume backgrounded
                         if (retryCount > MAX_RETRIES) {
                            clearInterval(poll);
                            setIsRemoteUploading(false);
-                           fetchDirectory(pathRef.current);
+                           setTimeout(() => fetchDirectory(pathRef.current), 1500); // DELAY FIX
                            alert("Task backgrounded. File will appear shortly.");
                         }
                     }
                 }
             }
         } catch (e) {
-            // General Error Handler
-            // If we are deep in the process (>90%) and hit an error, assume success
-            if (remoteProgress > 90) {
-                 clearInterval(poll);
-                 setIsRemoteUploading(false);
-                 fetchDirectory(pathRef.current);
-            }
             console.log("Polling error");
         }
     }, 1000);
