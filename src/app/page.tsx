@@ -107,36 +107,39 @@ export default function Home() {
     setLoading(false);
   };
 
-  // --- IMPROVED POLLING WITH RETRY LOGIC ---
+  // --- DEBUG POLLING WITH AGGRESSIVE REFRESH ---
   const pollRemoteStatus = async (id: string) => {
     setIsRemoteUploading(true);
     setRemoteProgress(0);
     setRemoteStatus("Initializing...");
 
     let stage = "download"; 
-    let retryCount = 0;
-    let finalizeTicks = 0;
-    const MAX_RETRIES = 20;
-    const currentPath = pathRef.current; // Capture path at start
+    let uploadCompleted = false;
+    const currentPath = pathRef.current;
+    console.log("🚀 Starting remote upload poll for ID:", id, "Path:", currentPath);
 
     const intervalId = setInterval(async () => {
         try {
-            // STAGE 1: DOWNLOAD FROM URL
+            // STAGE 1: CHECK DOWNLOAD PROGRESS
             if (stage === "download") {
                 const dlRes = await getFileDownloadProgress(id, password);
+                console.log("📥 Download Status:", dlRes.data);
                 
                 if (dlRes.data.status === "ok" && dlRes.data.data) {
                     const [status, current, total] = dlRes.data.data;
                     
-                    if (status === "running") {
-                        setRemoteStatus("Downloading...");
+                    if (status === "running" || status === "Downloading") {
+                        setRemoteStatus("Downloading from URL...");
                         const pct = total > 0 ? Math.round((current / total) * 100) : 0;
                         setRemoteProgress(pct);
                     } else if (status === "completed") {
-                        setRemoteStatus("Processing...");
+                        console.log("✅ Download completed, moving to upload stage");
+                        setRemoteStatus("Download Complete. Starting Upload...");
                         setRemoteProgress(100);
-                        stage = "transition"; 
+                        stage = "upload";
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                     } else if (status === "error") {
+                        console.error("❌ Download failed");
                         clearInterval(intervalId);
                         setIsRemoteUploading(false);
                         alert("Remote Download Failed");
@@ -144,92 +147,65 @@ export default function Home() {
                 }
             }
 
-            // STAGE 2: UPLOAD TO TELEGRAM
-            if (stage === "transition" || stage === "upload") {
-                let upRes;
-                try { 
-                    upRes = await getTelegramUploadProgress(id, password); 
-                } catch(e) { 
-                    upRes = { data: { status: "not found" } }; 
-                }
-                
-                if (upRes.data.status === "ok" && upRes.data.data) {
-                    // We found the upload process!
-                    stage = "upload";
-                    retryCount = 0;
+            // STAGE 2: CHECK TELEGRAM UPLOAD PROGRESS
+            if (stage === "upload" && !uploadCompleted) {
+                try {
+                    const upRes = await getTelegramUploadProgress(id, password);
+                    console.log("📤 Upload Status:", upRes.data);
                     
-                    const [status, current, total] = upRes.data.data;
+                    if (upRes.data.status === "ok" && upRes.data.data) {
+                        const [status, current, total] = upRes.data.data;
 
-                    if (status === "running") {
-                        const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-                        setRemoteProgress(pct);
-                        
-                        if (pct >= 99) {
-                            setRemoteStatus("Finalizing...");
-                            finalizeTicks++;
-                            // If at 100% for > 3 seconds, assume success
-                            if (finalizeTicks > 3) {
-                                clearInterval(intervalId);
-                                setRemoteStatus("Complete! Refreshing...");
-                                // CRITICAL FIX: Wait longer before refresh
-                                await new Promise(resolve => setTimeout(resolve, 3000));
-                                setIsRemoteUploading(false);
-                                await fetchDirectory(currentPath);
-                            }
-                        } else {
-                            setRemoteStatus("Uploading to Cloud...");
+                        if (status === "running") {
+                            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                            setRemoteProgress(pct);
+                            setRemoteStatus(`Uploading to Telegram... ${pct}%`);
+                        } else if (status === "completed") {
+                            console.log("✅ Telegram upload completed!");
+                            uploadCompleted = true;
+                            clearInterval(intervalId);
+                            setRemoteStatus("Upload Complete! Refreshing...");
+                            setRemoteProgress(100);
+                            
+                            // AGGRESSIVE MULTI-REFRESH STRATEGY
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                            console.log("🔄 First refresh...");
+                            await fetchDirectory(currentPath);
+                            
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+                            console.log("🔄 Second refresh...");
+                            await fetchDirectory(currentPath);
+                            
+                            setIsRemoteUploading(false);
                         }
-                    } else if (status === "completed") {
-                        // Backend says done
-                        clearInterval(intervalId);
-                        setRemoteStatus("Complete! Refreshing...");
-                        // CRITICAL FIX: Wait for database to update
-                        await new Promise(resolve => setTimeout(resolve, 3000));
-                        setIsRemoteUploading(false);
-                        await fetchDirectory(currentPath);
+                    } else if (upRes.data.status === "not found") {
+                        console.log("⏳ Upload process not found yet, waiting...");
+                        setRemoteStatus("Preparing upload...");
                     }
-                } else {
-                    // Status is "not found"
-                    if (stage === "upload") {
-                        // We were uploading, now it's gone -> IT FINISHED!
-                        console.log("Status gone, assuming success.");
-                        clearInterval(intervalId);
-                        setRemoteStatus("Complete! Refreshing...");
-                        // CRITICAL FIX: Wait for database to update
-                        await new Promise(resolve => setTimeout(resolve, 3000));
-                        setIsRemoteUploading(false);
-                        await fetchDirectory(currentPath);
-                    } 
-                    else if (stage === "transition") {
-                        setRemoteStatus("Preparing Upload...");
-                        retryCount++;
-                        // If waiting too long (>20s) for upload to start
-                        if (retryCount > MAX_RETRIES) {
-                           clearInterval(intervalId);
-                           setRemoteStatus("Complete! Refreshing...");
-                           await new Promise(resolve => setTimeout(resolve, 3000));
-                           setIsRemoteUploading(false);
-                           await fetchDirectory(currentPath);
-                        }
-                    }
+                } catch (err) {
+                    console.log("⚠️ Error checking upload progress:", err);
                 }
             }
         } catch (e) {
-            console.log("Polling error", e);
+            console.error("❌ Polling error:", e);
         }
-    }, 1000);
+    }, 1500);
   };
 
   const handleRemoteUpload = async (url: string) => {
     setShowRemoteUpload(false);
+    console.log("🎯 Starting remote upload for URL:", url);
     try {
         const res = await startRemoteUpload(url, path, password);
+        console.log("📡 Backend response:", res.data);
         if (res.data.status === "ok") {
+            console.log("✅ Upload task created with ID:", res.data.id);
             pollRemoteStatus(res.data.id);
         } else {
             alert("Error: " + res.data.status);
         }
     } catch (e) { 
+        console.error("❌ Failed to start remote upload:", e);
         alert("Failed to start remote upload"); 
     }
   };
