@@ -1,3 +1,3 @@
 # Frontend for  [Telegram Drive](https://github.com/AstraNode/Telegram-Drive)
 
-**Deploy it [Vercel](https://vercel.app)***
+**Deploy it in [Vercel](https://vercel.app)**
