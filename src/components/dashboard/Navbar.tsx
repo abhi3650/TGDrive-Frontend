@@ -1,4 +1,4 @@
-import { ArrowLeft, Upload, Search, Cloud, FolderPlus, LogOut, Link } from "lucide-react";
+import { ArrowLeft, Upload, Search, Cloud, FolderPlus, LogOut, Link, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 
 interface NavbarProps {
@@ -22,7 +22,7 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
   };
 
   return (
-    <nav className="fixed top-0 w-full glass z-50 px-4 md:px-8 py-3 md:py-4 flex flex-wrap md:flex-nowrap justify-between items-center gap-3 md:gap-4 transition-all">
+    <nav className="fixed top-0 w-full glass z-50 px-4 md:px-8 py-3 md:py-4 flex flex-wrap md:flex-nowrap justify-between items-center gap-3 md:gap-4 transition-all border-b border-white/5">
       
       {/* 1. Logo Section */}
       <div className="flex items-center gap-3 order-1 cursor-pointer group" onClick={onHome}>
@@ -31,8 +31,13 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
         </div>
         
         <div className="flex flex-col">
-          <h1 className="font-bold text-white leading-none tracking-tight text-lg group-hover:text-cyan-400 transition-colors">TG Drive</h1>
-          <div className="flex items-center gap-1 text-xs text-zinc-500 font-mono mt-0.5 max-w-[120px] overflow-hidden">
+          <div className="flex items-center gap-1.5">
+            <h1 className="font-bold text-white leading-none tracking-tight text-lg group-hover:text-cyan-300 transition-colors">TG Drive</h1>
+            <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/80 bg-cyan-500/10 border border-cyan-400/20 px-2 py-0.5 rounded-full">
+              <Sparkles size={10} /> modern
+            </span>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-zinc-500 font-mono mt-0.5 max-w-[180px] overflow-hidden">
              <span className="text-cyan-500 shrink-0">root</span>
              {currentPath !== "/" && (
                  <span className="truncate">/{currentPath.split('/').slice(1, -1).join('/')}</span>
@@ -47,7 +52,7 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
         {/* URL Upload Button */}
         <button 
           onClick={onRemoteUpload}
-          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
+          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800/80 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all hover:border-zinc-500/60"
           title="Remote URL Upload"
         >
           <Link size={18} />
@@ -56,7 +61,7 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
         {/* Create Folder */}
         <button 
           onClick={onCreateFolder}
-          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
+          className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800/80 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all hover:border-zinc-500/60"
           title="New Folder"
         >
           <FolderPlus size={18} />
@@ -65,7 +70,7 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
         {currentPath !== "/" && !currentPath.includes("/search_") && (
           <button 
             onClick={onBack} 
-            className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all"
+            className="p-2.5 bg-zinc-800/50 hover:bg-zinc-800/80 rounded-xl text-zinc-400 hover:text-white border border-zinc-700/50 transition-all hover:border-zinc-500/60"
             title="Go Back"
           >
             <ArrowLeft size={18} />
@@ -74,7 +79,7 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
 
         <button 
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 bg-white hover:bg-zinc-200 text-black px-4 py-2.5 rounded-xl font-medium transition-all shadow-lg shadow-white/5 active:scale-95"
+          className="flex items-center gap-2 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-black px-4 py-2.5 rounded-xl font-semibold transition-all shadow-lg shadow-cyan-900/30 active:scale-95"
         >
           <Upload size={18} />
           <span className="hidden sm:inline">Upload</span>
@@ -103,7 +108,7 @@ export default function Navbar({ currentPath, onBack, onUpload, onSearch, onHome
         <input 
             type="text" 
             placeholder="Search files..." 
-            className="w-full bg-zinc-900/50 border border-zinc-700/50 focus:border-cyan-500/50 rounded-xl py-2.5 pl-10 pr-4 text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder:text-zinc-600"
+            className="w-full bg-zinc-900/60 border border-zinc-700/50 focus:border-cyan-400/60 rounded-xl py-2.5 pl-10 pr-4 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 transition-all placeholder:text-zinc-500"
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
         />

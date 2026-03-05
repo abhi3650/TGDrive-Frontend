@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { Upload, Link as LinkIcon, CheckCircle2, Loader2 } from "lucide-react";
+import { Upload, Link as LinkIcon, CheckCircle2, Loader2, Folder, FileText, HardDrive } from "lucide-react";
 import LoginScreen from "@/components/auth/LoginScreen";
 import Navbar from "@/components/dashboard/Navbar";
 import FileGrid from "@/components/dashboard/FileGrid";
@@ -17,7 +17,7 @@ import {
   deleteFileFolder, startRemoteUpload, getFileDownloadProgress, getTelegramUploadProgress 
 } from "@/lib/api";
 import { FileItem, DirectoryData } from "@/lib/types";
-import { isVideoFile } from "@/lib/utils";
+import { isVideoFile, detectSubtitlesForVideo, SubtitleTrack } from "@/lib/utils";
 import { AnimatePresence } from "framer-motion";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -34,7 +34,7 @@ export default function Home() {
   useEffect(() => { pathRef.current = path; }, [path]);
 
   // UI States
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoState, setVideoState] = useState<{ src: string; title: string; subtitles: SubtitleTrack[] } | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   
   // Local Upload State
@@ -225,14 +225,22 @@ export default function Home() {
   const handleMenuClick = (item: FileItem) => setMenuItem(item);
 
   const handleItemClick = (item: FileItem) => {
-    if (item.type === "folder") {
-        const newPath = path === "/" || path.includes("/search_") 
-            ? `/${item.name}/${item.id}` 
-            : `${path}/${item.name}/${item.id}`;
-        fetchDirectory(newPath);
-    } else {
-        setSelectedFile(item);
+    const itemType = (item as { type?: string }).type || "file";
+    const isFolder = itemType !== "file";
+
+    if (isFolder) {
+      const normalizedBasePath = path === "/" || path.includes("/search_")
+        ? ""
+        : path.replace(/\/$/, "");
+
+      const safeName = encodeURIComponent(item.name);
+      const safeId = encodeURIComponent(item.id);
+      const newPath = `${normalizedBasePath}/${safeName}/${safeId}`;
+      fetchDirectory(newPath || "/");
+      return;
     }
+
+    setSelectedFile(item);
   };
 
   const handleSearch = (query: string) => {
@@ -246,6 +254,13 @@ export default function Home() {
     if (parts.length <= 2) fetchDirectory("/");
     else { parts.splice(-2); fetchDirectory("/" + parts.join("/")); }
   };
+
+  const items = Object.values(data.contents || {});
+  const folderCount = items.filter((item) => item.type === "folder").length;
+  const fileCount = items.filter((item) => item.type === "file").length;
+  const totalSize = items
+    .filter((item) => item.type === "file")
+    .reduce((acc, item) => acc + (item.size || 0), 0);
 
   const handleLocalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
@@ -273,7 +288,8 @@ export default function Home() {
   if (!isAuthenticated) return <LoginScreen onSuccess={handleLoginSuccess} />;
 
   return (
-    <div className="min-h-screen pb-10">
+    <div className="min-h-screen pb-10 relative">
+      <div className="mesh-overlay" />
       <Navbar 
         currentPath={path} 
         onBack={handleBack} 
@@ -328,6 +344,30 @@ export default function Home() {
            </div>
         )}
 
+        <section className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="glass rounded-2xl border border-white/5 px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-300 flex items-center justify-center"><Folder size={18} /></div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Folders</p>
+              <p className="text-lg font-semibold text-zinc-100">{folderCount}</p>
+            </div>
+          </div>
+          <div className="glass rounded-2xl border border-white/5 px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-500/10 text-violet-300 flex items-center justify-center"><FileText size={18} /></div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Files</p>
+              <p className="text-lg font-semibold text-zinc-100">{fileCount}</p>
+            </div>
+          </div>
+          <div className="glass rounded-2xl border border-white/5 px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-300 flex items-center justify-center"><HardDrive size={18} /></div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Visible Size</p>
+              <p className="text-lg font-semibold text-zinc-100">{(totalSize / (1024 * 1024)).toFixed(2)} MB</p>
+            </div>
+          </div>
+        </section>
+
         <FileGrid data={data} onItemClick={handleItemClick} onMenu={handleMenuClick} loading={loading} />
       </main>
 
@@ -338,7 +378,12 @@ export default function Home() {
                 downloadUrl={getFileDownloadUrl(selectedFile.path, selectedFile.id)}
                 onClose={() => setSelectedFile(null)}
                 onStream={isVideoFile(selectedFile.name) ? () => {
-                    setVideoUrl(getFileDownloadUrl(selectedFile.path, selectedFile.id));
+                    const subtitles = detectSubtitlesForVideo(selectedFile, Object.values(data.contents || {}), getFileDownloadUrl);
+                    setVideoState({
+                      src: getFileDownloadUrl(selectedFile.path, selectedFile.id),
+                      title: selectedFile.name,
+                      subtitles,
+                    });
                     setSelectedFile(null);
                 } : undefined}
             />
@@ -357,7 +402,14 @@ export default function Home() {
         {showRemoteUpload && <RemoteUploadModal onClose={() => setShowRemoteUpload(false)} onUpload={handleRemoteUpload} />}
       </AnimatePresence>
 
-      {videoUrl && <VideoPlayer src={videoUrl} onClose={() => setVideoUrl(null)} />}
+      {videoState && (
+        <VideoPlayer
+          src={videoState.src}
+          title={videoState.title}
+          subtitles={videoState.subtitles}
+          onClose={() => setVideoState(null)}
+        />
+      )}
     </div>
   );
 }
