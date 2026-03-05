@@ -225,14 +225,22 @@ export default function Home() {
   const handleMenuClick = (item: FileItem) => setMenuItem(item);
 
   const handleItemClick = (item: FileItem) => {
-    if (item.type === "folder") {
-        const newPath = path === "/" || path.includes("/search_") 
-            ? `/${item.name}/${item.id}` 
-            : `${path}/${item.name}/${item.id}`;
-        fetchDirectory(newPath);
-    } else {
-        setSelectedFile(item);
+    const itemType = (item as { type?: string }).type || "file";
+    const isFolder = itemType !== "file";
+
+    if (isFolder) {
+      const normalizedBasePath = path === "/" || path.includes("/search_")
+        ? ""
+        : path.replace(/\/$/, "");
+
+      const safeName = encodeURIComponent(item.name);
+      const safeId = encodeURIComponent(item.id);
+      const newPath = `${normalizedBasePath}/${safeName}/${safeId}`;
+      fetchDirectory(newPath || "/");
+      return;
     }
+
+    setSelectedFile(item);
   };
 
   const handleSearch = (query: string) => {
