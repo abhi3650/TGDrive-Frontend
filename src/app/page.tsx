@@ -229,14 +229,9 @@ export default function Home() {
     const isFolder = itemType !== "file";
 
     if (isFolder) {
-      const normalizedBasePath = path === "/" || path.includes("/search_")
-        ? ""
-        : path.replace(/\/$/, "");
-
-      const safeName = encodeURIComponent(item.name);
-      const safeId = encodeURIComponent(item.id);
-      const newPath = `${normalizedBasePath}/${safeName}/${safeId}`;
-      fetchDirectory(newPath || "/");
+      const basePath = (item.path || "/").replace(/\/$/, "");
+      const newPath = `${basePath}/${item.name}/${item.id}`;
+      fetchDirectory(newPath);
       return;
     }
 
