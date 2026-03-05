@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
-import { Upload, Link as LinkIcon, CheckCircle2, Loader2 } from "lucide-react";
+import { Upload, Link as LinkIcon, CheckCircle2, Loader2, Folder, FileText, HardDrive } from "lucide-react";
 import LoginScreen from "@/components/auth/LoginScreen";
 import Navbar from "@/components/dashboard/Navbar";
 import FileGrid from "@/components/dashboard/FileGrid";
@@ -247,6 +247,13 @@ export default function Home() {
     else { parts.splice(-2); fetchDirectory("/" + parts.join("/")); }
   };
 
+  const items = Object.values(data.contents || {});
+  const folderCount = items.filter((item) => item.type === "folder").length;
+  const fileCount = items.filter((item) => item.type === "file").length;
+  const totalSize = items
+    .filter((item) => item.type === "file")
+    .reduce((acc, item) => acc + (item.size || 0), 0);
+
   const handleLocalUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const file = e.target.files[0];
@@ -273,7 +280,8 @@ export default function Home() {
   if (!isAuthenticated) return <LoginScreen onSuccess={handleLoginSuccess} />;
 
   return (
-    <div className="min-h-screen pb-10">
+    <div className="min-h-screen pb-10 relative">
+      <div className="mesh-overlay" />
       <Navbar 
         currentPath={path} 
         onBack={handleBack} 
@@ -327,6 +335,30 @@ export default function Home() {
               </div>
            </div>
         )}
+
+        <section className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="glass rounded-2xl border border-white/5 px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-300 flex items-center justify-center"><Folder size={18} /></div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Folders</p>
+              <p className="text-lg font-semibold text-zinc-100">{folderCount}</p>
+            </div>
+          </div>
+          <div className="glass rounded-2xl border border-white/5 px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-500/10 text-violet-300 flex items-center justify-center"><FileText size={18} /></div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Files</p>
+              <p className="text-lg font-semibold text-zinc-100">{fileCount}</p>
+            </div>
+          </div>
+          <div className="glass rounded-2xl border border-white/5 px-4 py-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-300 flex items-center justify-center"><HardDrive size={18} /></div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Visible Size</p>
+              <p className="text-lg font-semibold text-zinc-100">{(totalSize / (1024 * 1024)).toFixed(2)} MB</p>
+            </div>
+          </div>
+        </section>
 
         <FileGrid data={data} onItemClick={handleItemClick} onMenu={handleMenuClick} loading={loading} />
       </main>
