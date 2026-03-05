@@ -17,7 +17,7 @@ import {
   deleteFileFolder, startRemoteUpload, getFileDownloadProgress, getTelegramUploadProgress 
 } from "@/lib/api";
 import { FileItem, DirectoryData } from "@/lib/types";
-import { isVideoFile } from "@/lib/utils";
+import { isVideoFile, detectSubtitlesForVideo, SubtitleTrack } from "@/lib/utils";
 import { AnimatePresence } from "framer-motion";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -34,7 +34,7 @@ export default function Home() {
   useEffect(() => { pathRef.current = path; }, [path]);
 
   // UI States
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [videoState, setVideoState] = useState<{ src: string; title: string; subtitles: SubtitleTrack[] } | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   
   // Local Upload State
@@ -370,7 +370,12 @@ export default function Home() {
                 downloadUrl={getFileDownloadUrl(selectedFile.path, selectedFile.id)}
                 onClose={() => setSelectedFile(null)}
                 onStream={isVideoFile(selectedFile.name) ? () => {
-                    setVideoUrl(getFileDownloadUrl(selectedFile.path, selectedFile.id));
+                    const subtitles = detectSubtitlesForVideo(selectedFile, Object.values(data.contents || {}), getFileDownloadUrl);
+                    setVideoState({
+                      src: getFileDownloadUrl(selectedFile.path, selectedFile.id),
+                      title: selectedFile.name,
+                      subtitles,
+                    });
                     setSelectedFile(null);
                 } : undefined}
             />
@@ -389,7 +394,14 @@ export default function Home() {
         {showRemoteUpload && <RemoteUploadModal onClose={() => setShowRemoteUpload(false)} onUpload={handleRemoteUpload} />}
       </AnimatePresence>
 
-      {videoUrl && <VideoPlayer src={videoUrl} onClose={() => setVideoUrl(null)} />}
+      {videoState && (
+        <VideoPlayer
+          src={videoState.src}
+          title={videoState.title}
+          subtitles={videoState.subtitles}
+          onClose={() => setVideoState(null)}
+        />
+      )}
     </div>
   );
 }
